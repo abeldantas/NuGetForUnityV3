@@ -16,40 +16,40 @@ namespace NuGetForUnity.Cli
 
         private static string DefaultProjectPath => Directory.GetCurrentDirectory();
 
-        public static int Main(string[] args)
+        public static int Main( string[] args )
         {
             var availableArguments = args.ToList();
 
-            if (args.Length < 1 || !args[0].Equals("restore", StringComparison.OrdinalIgnoreCase) || args.Any(IsHelpOption))
+            if ( args.Length < 1 || !args[ 0 ].Equals( "restore", StringComparison.OrdinalIgnoreCase ) || args.Any( IsHelpOption ) )
             {
                 return PrintUsage();
             }
 
             // remove restore
-            availableArguments.RemoveAt(0);
+            availableArguments.RemoveAt( 0 );
 
             string projectPath;
-            if (availableArguments.Count != 0)
+            if ( availableArguments.Count != 0 )
             {
-                projectPath = availableArguments[0].Replace("'", "").Replace("\"", "");
-                availableArguments.RemoveAt(0);
+                projectPath = availableArguments[ 0 ].Replace( "'", "" ).Replace( "\"", "" );
+                availableArguments.RemoveAt( 0 );
             }
             else
             {
                 projectPath = DefaultProjectPath;
             }
 
-            if (availableArguments.Count > 0)
+            if ( availableArguments.Count > 0 )
             {
-                foreach (var unknownArgument in availableArguments)
+                foreach ( var unknownArgument in availableArguments )
                 {
-                    Console.Error.WriteLine($"Unrecognized command or argument '{unknownArgument}'");
+                    Console.Error.WriteLine( $"Unrecognized command or argument '{unknownArgument}'" );
                 }
 
                 return PrintUsage();
             }
 
-            Application.SetUnityProjectPath(projectPath);
+            Application.SetUnityProjectPath( projectPath );
 
             // need to disable dependency installation as UnityPreImportedLibraryResolver.GetAlreadyImportedLibs is not working outside Unity.
             NugetHelper.InstallDependencies = false;
@@ -67,38 +67,38 @@ namespace NuGetForUnity.Cli
         /// </summary>
         private static void FixRoslynAnalyzerImportSettings()
         {
-            if (int.Parse(Application.unityVersion.Split('.').First()) > 2021)
+            if ( int.Parse( Application.unityVersion.Split( '.' ).First() ) > 2021 )
             {
                 // in unity 2022 our AssetPostprocessor is handled before we get the errors for the RoslynAnalyzer DLL's
                 return;
             }
 
-            if (NugetHelper.NugetConfigFile == null || !Directory.Exists(NugetHelper.NugetConfigFile.RepositoryPath))
+            if ( NugetHelper.NugetConfigFile == null || !Directory.Exists( NugetHelper.NugetConfigFile.RepositoryPath ) )
             {
                 return;
             }
 
             UTF8Encoding? utf8NoBom = null;
-            foreach (var packageDirectoryPath in Directory.EnumerateDirectories(NugetHelper.NugetConfigFile.RepositoryPath))
+            foreach ( var packageDirectoryPath in Directory.EnumerateDirectories( NugetHelper.NugetConfigFile.RepositoryPath ) )
             {
-                var analyzersDirectoryPath = Path.Combine(packageDirectoryPath, "analyzers");
-                if (!Directory.Exists(analyzersDirectoryPath))
+                var analyzersDirectoryPath = Path.Combine( packageDirectoryPath, "analyzers" );
+                if ( !Directory.Exists( analyzersDirectoryPath ) )
                 {
                     continue;
                 }
 
-                foreach (var analyzerDllPath in Directory.EnumerateFiles(analyzersDirectoryPath, "*.dll", SearchOption.AllDirectories))
+                foreach ( var analyzerDllPath in Directory.EnumerateFiles( analyzersDirectoryPath, "*.dll", SearchOption.AllDirectories ) )
                 {
                     var analyzerDllMetaPath = $"{analyzerDllPath}.meta";
-                    if (File.Exists(analyzerDllMetaPath))
+                    if ( File.Exists( analyzerDllMetaPath ) )
                     {
                         continue;
                     }
 
-                    utf8NoBom ??= new UTF8Encoding(false);
+                    utf8NoBom ??= new UTF8Encoding( false );
                     File.WriteAllText(
                         analyzerDllMetaPath,
-                        $"""
+                        @$"""
                         fileFormatVersion: 2
                         guid: {Guid.NewGuid():N}
                         labels:
@@ -114,26 +114,26 @@ namespace NuGetForUnity.Cli
                             second:
                               enabled: 0
                         """,
-                        utf8NoBom);
+                        utf8NoBom );
                 }
             }
         }
 
-        private static bool IsHelpOption(string argument)
+        private static bool IsHelpOption( string argument )
         {
-            return helpOptions.Any(helpOption => argument.Equals(helpOption, StringComparison.OrdinalIgnoreCase));
+            return helpOptions.Any( helpOption => argument.Equals( helpOption, StringComparison.OrdinalIgnoreCase ) );
         }
 
         private static int PrintUsage()
         {
-            var description = typeof(Program).Assembly.GetCustomAttribute<AssemblyDescriptionAttribute>()?.Description ?? string.Empty;
+            var description = typeof( Program ).Assembly.GetCustomAttribute<AssemblyDescriptionAttribute>()?.Description ?? string.Empty;
 
             // create single line string from multi line string
             description = string.Join(
                 ' ',
-                description.Split(new[] { "\n", "\r\n" }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+                description.Split( new[] { "\n", "\r\n" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.RemoveEmptyEntries ) );
             Console.WriteLine(
-                $"""
+                @$"""
                 Description:
                     {description}
 
@@ -145,7 +145,7 @@ namespace NuGetForUnity.Cli
 
                 Options:
                     -?, -h, --help  Show command line help.
-                """);
+                """ );
             return 1;
         }
     }

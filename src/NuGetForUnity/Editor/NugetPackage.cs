@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace NugetForUnity
@@ -206,6 +207,44 @@ namespace NugetForUnity
         {
             var package = FromNuspec(NuspecFile.FromNupkgFile(nupkgFilepath));
             package.DownloadUrl = nupkgFilepath;
+            return package;
+        }
+
+        public static NugetPackage FromJson(JObject json)
+        {
+            var package = new NugetPackage();
+
+            // Parse JSON properties and set the corresponding NugetPackage properties.
+            // Adjust the property names according to the JSON structure of the v3 feed response.
+            package.Id = (string)json["id"];
+            package.Version = (string)json["version"];
+            package.Title = (string)json["title"] ?? package.Id;
+            package.Authors = (string)json["authors"];
+            package.IconUrl = (string)json["iconUrl"];
+            package.LicenseUrl = (string)json["licenseUrl"];
+            package.ProjectUrl = (string)json["projectUrl"];
+            package.Description = (string)json["description"];
+            package.Summary = (string)json["summary"] ?? package.Description;
+            package.ReleaseNotes = (string)json["releaseNotes"];
+
+            // Handle dependencies
+            if (json["dependencies"] is JArray dependencies)
+            {
+                // Assuming all dependencies belong to the same framework group.
+                // You may need to adjust this if there are multiple framework groups in the JSON.
+                var frameworkGroup = new NugetFrameworkGroup();
+                foreach (var dependency in dependencies)
+                {
+                    var dependencyPackage = new NugetPackageIdentifier(
+                        (string)dependency["id"], (string)dependency["version"]);
+                    frameworkGroup.Dependencies.Add(dependencyPackage);
+                }
+                package.Dependencies.Add(frameworkGroup);
+            }
+
+            // Set download URL and other properties as needed
+            package.DownloadUrl = (string)json["packageContent"];
+
             return package;
         }
     }
