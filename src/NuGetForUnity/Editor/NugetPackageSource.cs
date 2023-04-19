@@ -272,45 +272,36 @@ namespace NugetForUnity
                 return GetLocalPackages(searchTerm, includeAllVersions, includePrerelease, numberToGet, numberToSkip);
             }
 
-            //Example URL: "http://www.nuget.org/api/v2/Search()?$filter=IsLatestVersion&$orderby=Id&$skip=0&$top=30&searchTerm='newtonsoft'&targetFramework=''&includePrerelease=false";
-
             string url = ExpandedPath;
 
-            // call the search method
-            url += "Search()?";
-
-            // filter results
-            if (!includeAllVersions)
+            if (Isv3)
             {
-                if (!includePrerelease)
-                {
-                    url += "$filter=IsLatestVersion&";
-                }
-                else
-                {
-                    url += "$filter=IsAbsoluteLatestVersion&";
-                }
+                // v3 search URL
+                url = string.Format("{0}?q={1}&skip={2}&take={3}&prerelease={4}", url, searchTerm, numberToSkip, numberToGet, includePrerelease.ToString().ToLower());
             }
+            else
+            {
+                // v2 search URL
+                url += "Search()?";
+                if (!includeAllVersions)
+                {
+                    if (!includePrerelease)
+                    {
+                        url += "$filter=IsLatestVersion&";
+                    }
+                    else
+                    {
+                        url += "$filter=IsAbsoluteLatestVersion&";
+                    }
+                }
 
-            // order results
-            //url += "$orderby=Id&";
-            //url += "$orderby=LastUpdated&";
-            url += "$orderby=DownloadCount desc&";
-
-            // skip a certain number of entries
-            url += string.Format("$skip={0}&", numberToSkip);
-
-            // show a certain number of entries
-            url += string.Format("$top={0}&", numberToGet);
-
-            // apply the search term
-            url += string.Format("searchTerm='{0}'&", searchTerm);
-
-            // apply the target framework filters
-            url += "targetFramework=''&";
-
-            // should we include prerelease packages?
-            url += string.Format("includePrerelease={0}", includePrerelease.ToString().ToLower());
+                url += "$orderby=DownloadCount desc&";
+                url += string.Format("$skip={0}&", numberToSkip);
+                url += string.Format("$top={0}&", numberToGet);
+                url += string.Format("searchTerm='{0}'&", searchTerm);
+                url += "targetFramework=''&";
+                url += string.Format("includePrerelease={0}", includePrerelease.ToString().ToLower());
+            }
 
             try
             {
@@ -322,6 +313,7 @@ namespace NugetForUnity
                 return new List<NugetPackage>();
             }
         }
+
 
         /// <summary>
         /// Gets a list of all available packages from a local source (not a web server) that match the given filters.
@@ -501,54 +493,79 @@ namespace NugetForUnity
 
             List<NugetPackage> updates = new List<NugetPackage>();
 
-            // check for updates in groups of 10 instead of all of them, since that causes servers to throw errors for queries that are too long
-            for (int i = 0; i < installedPackages.Count(); i += 10)
+            if (Isv3)
             {
-                var packageGroup = installedPackages.Skip(i).Take(10);
-
-                string packageIds = string.Empty;
-                string versions = string.Empty;
-
-                foreach (var package in packageGroup)
+                // GetUpdates is not supported directly in v3, use FindPackagesById for each package
+                foreach (var package in installedPackages)
                 {
-                    if (string.IsNullOrEmpty(packageIds))
+                    NugetPackageIdentifier packageIdentifier = new NugetPackageIdentifier(package.Id, string.Empty);
+                    var foundPackages = FindPackagesById(packageIdentifier);
+
+                    if (!includePrerelease)
                     {
-                        packageIds += package.Id;
-                    }
-                    else
-                    {
-                        packageIds += "|" + package.Id;
+                        foundPackages.RemoveAll(p => p.IsPrerelease);
                     }
 
-                    if (string.IsNullOrEmpty(versions))
+                    if (!includeAllVersions)
                     {
-                        versions += package.Version;
+                        foundPackages.Sort();
+                        foundPackages = foundPackages.TakeLast(1).ToList();
                     }
-                    else
-                    {
-                        versions += "|" + package.Version;
-                    }
+
+                    updates.AddRange(foundPackages);
                 }
-
-                string url = string.Format("{0}GetUpdates()?packageIds='{1}'&versions='{2}'&includePrerelease={3}&includeAllVersions={4}&targetFrameworks='{5}'&versionConstraints='{6}'", ExpandedPath, packageIds, versions, includePrerelease.ToString().ToLower(), includeAllVersions.ToString().ToLower(), targetFrameworks, versionContraints);
-
-                try
+            }
+            else
+            {
+                // v2 GetUpdates logic
+                for (int i = 0; i < installedPackages.Count(); i += 10)
                 {
-                    var newPackages = GetPackagesFromUrl(url, UserName, ExpandedPassword);
-                    updates.AddRange(newPackages);
-                }
-                catch (System.Exception e)
-                {
-                    WebException webException = e as WebException;
-                    HttpWebResponse webResponse = webException != null ? webException.Response as HttpWebResponse : null;
-                    if (webResponse != null && webResponse.StatusCode == HttpStatusCode.NotFound)
+                    var packageGroup = installedPackages.Skip(i).Take(10);
+
+                    string packageIds = string.Empty;
+                    string versions = string.Empty;
+
+                    foreach (var package in packageGroup)
                     {
-                        // Some web services, such as VSTS don't support the GetUpdates API. Attempt to retrieve updates via FindPackagesById.
-                        NugetHelper.LogVerbose("{0} not found. Falling back to FindPackagesById.", url);
-                        return GetUpdatesFallback(installedPackages, includePrerelease, includeAllVersions, targetFrameworks, versionContraints);
+                        if (string.IsNullOrEmpty(packageIds))
+                        {
+                            packageIds += package.Id;
+                        }
+                        else
+                        {
+                            packageIds += "|" + package.Id;
+                        }
+
+                        if (string.IsNullOrEmpty(versions))
+                        {
+                            versions += package.Version;
+                        }
+                        else
+                        {
+                            versions += "|" + package.Version;
+                        }
                     }
 
-                    Debug.LogErrorFormat("Unable to retrieve package list from {0}\n{1}", url, e.ToString());
+                    string url = string.Format("{0}GetUpdates()?packageIds='{1}'&versions='{2}'&includePrerelease={3}&includeAllVersions={4}&targetFrameworks='{5}'&versionConstraints='{6}'", ExpandedPath, packageIds, versions, includePrerelease.ToString().ToLower(), includeAllVersions.ToString().ToLower(), targetFrameworks, versionContraints);
+
+                    try
+                    {
+                        var newPackages = GetPackagesFromUrl(url, UserName, ExpandedPassword);
+                        updates.AddRange(newPackages);
+                    }
+                    catch (System.Exception e)
+                    {
+                        WebException webException = e as WebException;
+                        HttpWebResponse webResponse = webException != null ? webException.Response as HttpWebResponse : null;
+                        if (webResponse != null && webResponse.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            // Some web services, such as VSTS don't support the GetUpdates API. Attempt to retrieve updates via FindPackagesById.
+                            NugetHelper.LogVerbose("{0} not found. Falling back to FindPackagesById.", url);
+                            return GetUpdatesFallback(installedPackages, includePrerelease, includeAllVersions, targetFrameworks, versionContraints);
+                        }
+
+                        Debug.LogErrorFormat("Unable to retrieve package list from {0}\n{1}", url, e.ToString());
+                    }
                 }
             }
 
@@ -560,14 +577,6 @@ namespace NugetForUnity
                 else
                     return x.Id.CompareTo(y.Id);
             });
-
-#if TEST_GET_UPDATES_FALLBACK
-            // Enable this define in order to test that GetUpdatesFallback is working as intended. This tests that it returns the same set of packages
-            // that are returned by the GetUpdates API. Since GetUpdates isn't available when using a Visual Studio Team Services feed, the intention
-            // is that this test would be conducted by using nuget.org's feed where both paths can be compared.
-            List<NugetPackage> updatesReplacement = GetUpdatesFallback(installedPackages, includePrerelease, includeAllVersions, targetFrameworks, versionContraints);
-            ComparePackageLists(updates, updatesReplacement, "GetUpdatesFallback doesn't match GetUpdates API");
-#endif
 
             return updates;
         }
